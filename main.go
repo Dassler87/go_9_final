@@ -13,20 +13,17 @@ const (
 )
 
 // generateRandomElements generates random elements.
-func generateRandomElements(size int) []int {
+func generateRandomElements(size int, r *rand.Rand) []int {
 
-	// Обработка крайнего случая: если размер <= 0, возвращаем пустой слайс
+	// При некорректном размере возвращаем nil
 	if size <= 0 {
-		return []int{}
+		return nil
 	}
-
-	// Создаём локальный генератор случайных чисел.
-	r := rand.New(rand.NewSource(87))
 
 	result := make([]int, size)
 	for i := range result {
-		// Генерируем число в диапазоне [1, 1000000)
-		result[i] = r.Intn(1000000) + 1
+		// Неограниченная случайность: любое неотрицательное int
+		result[i] = r.Int()
 	}
 	return result
 
@@ -39,9 +36,9 @@ func maximum(data []int) int {
 	}
 
 	maxVal := data[0]
-	for i := 1; i < len(data); i++ {
-		if data[i] > maxVal {
-			maxVal = data[i]
+	for _, v := range data[1:] {
+		if v > maxVal {
+			maxVal = v
 		}
 	}
 	return maxVal
@@ -65,51 +62,38 @@ func maxChunks(data []int) int {
 	wg.Add(CHUNKS)
 
 	for c := 0; c < CHUNKS; c++ {
-		go func(chunkID int) {
+
+		// Подготовка слайса до запуска горутины
+		start := c * chunkSize
+		end := start + chunkSize
+		if end > n {
+			end = n
+		}
+
+		chunk := data[start:end]
+
+		go func(id int, ch []int) {
 			defer wg.Done()
 
-			start := chunkID * chunkSize
-			end := start + chunkSize
-			if end > n {
-				end = n
-			}
-
-			// Защита от пустого диапазона. Если CHUNKS > len(data), некоторые горутины
-			// могут получить пустой чанк [start:end), где start == end.
-			// Попытка доступа к chunk[0] в этом случае привела бы к панике,
-			// поэтому мы явно задаем максимум для такого чанка как 0.
-			if start >= end {
-				localMaxes[chunkID] = 0
-				return
-			}
-
-			chunk := data[start:end]
-			localMax := chunk[0]
-			for i := 1; i < len(chunk); i++ {
-				if chunk[i] > localMax {
-					localMax = chunk[i]
-				}
-			}
-			localMaxes[chunkID] = localMax
-		}(c)
+			// Пустой диапазон: используем maximum для получения результата.
+			localMaxes[id] = maximum(ch)
+		}(c, chunk) // Передаем ID и готовый слайс
 	}
 
 	// Ожидаем, пока все горутины не закончат свою работу.
 	wg.Wait()
 
-	// Находим максимум среди локальных максимумов
-	globalMax := localMaxes[0]
-	for i := 1; i < CHUNKS; i++ {
-		if localMaxes[i] > globalMax {
-			globalMax = localMaxes[i]
-		}
-	}
-	return globalMax
+	// Используем maximum для финального поиска максимума
+	return maximum(localMaxes)
 }
 
 func main() {
+	// Создаём генератор со случайным seed (на основе времени)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	fmt.Printf("Генерируем %d целых чисел", SIZE)
-	data := generateRandomElements(SIZE)
+
+	data := generateRandomElements(SIZE, r)
 	fmt.Println()
 
 	fmt.Println("Ищем максимальное значение в один поток")
